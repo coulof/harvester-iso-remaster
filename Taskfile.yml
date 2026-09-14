@@ -25,11 +25,11 @@ tasks:
       - go test -mod=vendor -v ./...
 
   check-deps:
-    desc: "Verify native Linux tools (xorriso, mtools, dosfstools, python3) are installed"
+    desc: "Verify native Linux tools (xorriso, mtools, dosfstools, go) are installed"
     cmds:
       - |
         MISSING=""
-        for tool in xorriso mcopy mkfs.vfat python3; do
+        for tool in xorriso mcopy mkfs.vfat go; do
           if ! command -v "$tool" >/dev/null 2>&1; then
             MISSING="$MISSING $tool"
           fi
@@ -37,12 +37,12 @@ tasks:
         if [ -n "$MISSING" ]; then
           echo "[!] Missing required native Linux tools:$MISSING"
           echo "    Please install them using your system package manager:"
-          echo "      - openSUSE / SLES: sudo zypper in -y xorriso mtools dosfstools python3"
-          echo "      - Ubuntu / Debian: sudo apt-get install -y xorriso mtools dosfstools python3"
-          echo "      - RHEL / Rocky:    sudo dnf install -y xorriso mtools dosfstools python3"
+          echo "      - openSUSE / SLES: sudo zypper in -y xorriso mtools dosfstools go"
+          echo "      - Ubuntu / Debian: sudo apt-get install -y xorriso mtools dosfstools golang-go"
+          echo "      - RHEL / Rocky:    sudo dnf install -y xorriso mtools dosfstools golang"
           exit 1
         else
-          echo "[+] All required native tools (xorriso, mtools, dosfstools, python3) are available."
+          echo "[+] All required native tools (xorriso, mtools, dosfstools, go) are available."
         fi
 
   remaster-create:

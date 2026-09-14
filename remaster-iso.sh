@@ -14,7 +14,6 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 GO_CMDLINE="${SCRIPT_DIR}/bin/harvester-cmdline"
-YAML_CONVERTER="${SCRIPT_DIR}/yaml-to-cmdline.py"
 
 # Defaults
 SOURCE_ISO=""
@@ -49,7 +48,7 @@ Dependencies:
   - xorriso
   - mcopy (from mtools package)
   - mkfs.vfat or mkfs.fat (from dosfstools package)
-  - python3
+  - harvester-cmdline (compiled Go binary or in PATH)
 
 Examples:
   # Using iPXE script + Config YAML:
@@ -62,7 +61,7 @@ Examples:
   # Using Config YAML directly (baked-in parameters):
   $(basename "$0") \\
     --source-iso ./harvester-v1.8.2-amd64.iso \\
-    --config-file ./provisioning/harvester-config/config-create.yaml \\
+    --config-file ./examples/config-create.yaml \\
     --mode create \\
     --output-iso ./harvester-v1.8.2-create.iso
 EOF
@@ -159,7 +158,7 @@ fi
 
 # Assert Tooling
 MISSING_TOOLS=()
-for tool in xorriso mcopy python3; do
+for tool in xorriso mcopy awk; do
     if ! command -v "$tool" >/dev/null 2>&1; then
         MISSING_TOOLS+=("$tool")
     fi
@@ -169,13 +168,29 @@ if [[ -z "$MKFS_VFAT_BIN" ]]; then
     MISSING_TOOLS+=("mkfs.vfat/mkfs.fat")
 fi
 
+# Resolve harvester-cmdline binary (build if absent and Go is available)
+CMDLINE_BIN=""
+if [[ -x "$GO_CMDLINE" ]]; then
+    CMDLINE_BIN="$GO_CMDLINE"
+elif command -v harvester-cmdline >/dev/null 2>&1; then
+    CMDLINE_BIN="$(command -v harvester-cmdline)"
+elif [[ -f "${SCRIPT_DIR}/Makefile" ]] && command -v go >/dev/null 2>&1; then
+    echo "[+] Building harvester-cmdline binary..."
+    make -C "$SCRIPT_DIR" build
+    CMDLINE_BIN="$GO_CMDLINE"
+fi
+
+if [[ -n "$CONFIG_FILE" ]] && [[ -z "$CMDLINE_BIN" || ! -x "$CMDLINE_BIN" ]]; then
+    MISSING_TOOLS+=("harvester-cmdline (build with 'make build')")
+fi
+
 if [[ ${#MISSING_TOOLS[@]} -gt 0 ]]; then
     echo "[-] Error: Missing required tools: ${MISSING_TOOLS[*]}" >&2
     echo "    Install them via:" >&2
-    echo "      - macOS:           brew install xorriso mtools dosfstools" >&2
-    echo "      - openSUSE / SLES: sudo zypper in -y xorriso mtools dosfstools python3" >&2
-    echo "      - Ubuntu / Debian: sudo apt-get install -y xorriso mtools dosfstools python3" >&2
-    echo "      - RHEL / Rocky:    sudo dnf install -y xorriso mtools dosfstools python3" >&2
+    echo "      - macOS:           brew install xorriso mtools dosfstools go" >&2
+    echo "      - openSUSE / SLES: sudo zypper in -y xorriso mtools dosfstools go" >&2
+    echo "      - Ubuntu / Debian: sudo apt-get install -y xorriso mtools dosfstools golang-go" >&2
+    echo "      - RHEL / Rocky:    sudo dnf install -y xorriso mtools dosfstools golang" >&2
     exit 1
 fi
 
@@ -199,36 +214,24 @@ BAKED_PARAMS=""
 
 if [[ -n "$CONFIG_FILE" ]]; then
     echo "    Translating YAML config ($CONFIG_FILE) into baked kernel arguments..."
-    if [[ -x "$GO_CMDLINE" ]]; then
-        BAKED_PARAMS="$("$GO_CMDLINE" --allow-secrets-on-cmdline --mode "$MODE" "$CONFIG_FILE")"
-    elif command -v harvester-cmdline >/dev/null 2>&1; then
-        BAKED_PARAMS="$(harvester-cmdline --allow-secrets-on-cmdline --mode "$MODE" "$CONFIG_FILE")"
-    else
-        BAKED_PARAMS="$(python3 "$YAML_CONVERTER" "$CONFIG_FILE" --mode "$MODE")"
-    fi
+    BAKED_PARAMS="$("$CMDLINE_BIN" --allow-secrets-on-cmdline --mode "$MODE" "$CONFIG_FILE")"
 fi
 
 if [[ -n "$IPXE_FILE" ]]; then
     echo "    Extracting arguments from iPXE script ($IPXE_FILE)..."
-    # Read the 'kernel' line, remove 'kernel <kernel-path>', remove 'root=live:http...',
-    # remove 'initrd=...' (handled separately in grub.cfg).
-    CMDLINE_PARAMS=$(python3 -c "
-import sys, re
-with open(sys.argv[1]) as f:
-    for line in f:
-        line = line.strip()
-        if line.startswith('kernel'):
-            parts = line.split()[2:] # Skip 'kernel' and kernel image path
-            filtered = []
-            for p in parts:
-                if p.startswith('root=live:http'):
-                    continue # Keep local squashfs on ISO
-                if p.startswith('initrd='):
-                    continue # Handled by GRUB
-                filtered.append(p)
-            print(' '.join(filtered))
-            break
-" "$IPXE_FILE")
+    # Read the 'kernel' line, skip 'kernel <kernel-path>', skip 'root=live:http...',
+    # skip 'initrd=...' (handled separately by GRUB on ISO).
+    CMDLINE_PARAMS=$(awk '
+      /^kernel[[:space:]]/ {
+        for (i=3; i<=NF; i++) {
+          if ($i ~ /^root=live:http/ || $i ~ /^initrd=/) continue;
+          printf "%s%s", (out ? " " : ""), $i;
+          out=1;
+        }
+        print "";
+        exit;
+      }
+    ' "$IPXE_FILE")
 else
     CMDLINE_PARAMS="$BAKED_PARAMS"
 fi
@@ -288,46 +291,34 @@ set extra_iso_cmdline="${CMDLINE_PARAMS}"
 set extra_baked_cmdline="${BAKED_PARAMS}"
 EOF
 
-# 3b. Update GRUB timeout & menu titles portably with Python
+# 3b. Update GRUB timeout & menu titles portably using awk
 MODE_UPPER="$(echo "$MODE" | tr '[:lower:]' '[:upper:]')"
 HAS_BAKED_DIFF="false"
 if [[ -n "$BAKED_PARAMS" && "$BAKED_PARAMS" != "$CMDLINE_PARAMS" ]]; then
     HAS_BAKED_DIFF="true"
 fi
 
-python3 -c "
-import sys, re
-grub_cfg = sys.argv[1]
-timeout = sys.argv[2]
-mode_upper = sys.argv[3]
-has_baked = sys.argv[4] == 'true'
-try:
-    with open(grub_cfg, 'r') as f:
-        content = f.read()
-    # Update timeout
-    content = re.sub(r'set timeout=\d+', f'set timeout={timeout}', content)
-    # Update title
-    content = re.sub(r'menuentry \"Harvester Installer \$\{harvester_version\}\"', f'menuentry \"Harvester Installer \${{harvester_version}} ({mode_upper} Mode - Automated)\"', content)
-    
-    if has_baked:
-        offline_entry = '''
-menuentry \"Harvester Installer \${harvester_version} (''' + mode_upper + ''' Mode - Offline Baked)\" --class os --unrestricted {
-    echo Loading kernel...
-    \$linux (\$root)/boot/x86_64/loader/linux cdroot root=live:CDLABEL=COS_LIVE rd.live.dir=/ rd.live.squashimg=rootfs.squashfs rd.cos.disable net.ifnames=1 \${extra_baked_cmdline}
-    echo Loading initrd...
-    \$initrd (\$root)/boot/x86_64/loader/initrd
-}
-'''
-        first_menu_end = content.find('}\n\nmenuentry')
-        if first_menu_end != -1:
-            content = content[:first_menu_end+2] + offline_entry + content[first_menu_end+2:]
-
-    with open(grub_cfg, 'w') as f:
-        f.write(content)
-except Exception as e:
-    sys.stderr.write(f'Error updating {grub_cfg}: {e}\n')
-    sys.exit(1)
-" "${EXTRACT_DIR}/boot/grub2/grub.cfg" "$GRUB_TIMEOUT" "$MODE_UPPER" "$HAS_BAKED_DIFF"
+awk -v timeout="$GRUB_TIMEOUT" -v mode_upper="$MODE_UPPER" -v has_baked="$HAS_BAKED_DIFF" '
+  /set timeout=[0-9]+/ {
+    sub(/set timeout=[0-9]+/, "set timeout=" timeout)
+  }
+  /menuentry "Harvester Installer \$\{harvester_version\}"/ && !first_title_done {
+    sub(/menuentry "Harvester Installer \$\{harvester_version\}"/, "menuentry \"Harvester Installer ${harvester_version} (" mode_upper " Mode - Automated)\"")
+    first_title_done=1
+  }
+  { print }
+  has_baked == "true" && !offline_injected && /^}/ {
+    print ""
+    print "menuentry \"Harvester Installer ${harvester_version} (" mode_upper " Mode - Offline Baked)\" --class os --unrestricted {"
+    print "    echo Loading kernel..."
+    print "    $linux ($root)/boot/x86_64/loader/linux cdroot root=live:CDLABEL=COS_LIVE rd.live.dir=/ rd.live.squashimg=rootfs.squashfs rd.cos.disable net.ifnames=1 ${extra_baked_cmdline}"
+    print "    echo Loading initrd..."
+    print "    $initrd ($root)/boot/x86_64/loader/initrd"
+    print "}"
+    offline_injected=1
+  }
+' "${EXTRACT_DIR}/boot/grub2/grub.cfg" > "${EXTRACT_DIR}/boot/grub2/grub.cfg.tmp"
+mv "${EXTRACT_DIR}/boot/grub2/grub.cfg.tmp" "${EXTRACT_DIR}/boot/grub2/grub.cfg"
 
 # 3c. Archive files into ISO for operator traceability & local recovery
 mkdir -p "${EXTRACT_DIR}/harvester-config"

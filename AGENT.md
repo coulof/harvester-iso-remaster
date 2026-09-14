@@ -56,7 +56,6 @@ All dependencies are vendored in `vendor/`. Builds must succeed completely offli
 ├── Makefile                 # build, test, test-update, lint, vendor
 ├── Taskfile.yml             # Task runner for CREATE and JOIN remastering
 ├── remaster-iso.sh          # Native ISO remastering script
-├── yaml-to-cmdline.py       # Legacy Python converter
 ├── go.mod                   # Pinned to harvester-installer v1.8.2
 ├── go.sum
 ├── vendor/                  # Committed vendor tree
