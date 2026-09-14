@@ -1,0 +1,13 @@
+scheme_version: 1
+server_url: "https://10.10.0.50:443"
+token: "secret-cluster-token"
+os:
+  hostname: "hv-join-node-02"
+  password: "rancher-password"
+install:
+  mode: join
+  device: "/dev/sda"
+  management_interface:
+    method: dhcp
+    interfaces:
+      - name: eth0

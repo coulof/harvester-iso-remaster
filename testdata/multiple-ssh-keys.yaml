@@ -1,0 +1,18 @@
+scheme_version: 1
+token: "secret-token"
+os:
+  hostname: "hv-keys-node"
+  password: "rancher-password"
+  ssh_authorized_keys:
+    - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleKey1 admin@cluster"
+    - "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC3ExampleKey2 devops@corp"
+    - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleKey3 audit@defense"
+install:
+  mode: create
+  device: "/dev/sda"
+  vip: "10.0.0.100"
+  vip_mode: "static"
+  management_interface:
+    method: dhcp
+    interfaces:
+      - name: eth0

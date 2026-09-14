@@ -1,0 +1,14 @@
+scheme_version: 1
+token: "secret-token"
+os:
+  hostname: "hv-dhcp-node"
+  password: "rancher-password"
+install:
+  mode: create
+  device: "/dev/sda"
+  vip: "192.168.10.100"
+  vip_mode: "dhcp"
+  management_interface:
+    method: dhcp
+    interfaces:
+      - name: eth0

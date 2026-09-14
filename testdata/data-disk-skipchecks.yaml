@@ -1,0 +1,16 @@
+scheme_version: 1
+token: "secret-token"
+os:
+  hostname: "hv-datadisk-node"
+  password: "rancher-password"
+install:
+  mode: create
+  device: "/dev/sda"
+  data_disk: "/dev/sdb"
+  vip: "10.0.0.100"
+  vip_mode: "static"
+  skipchecks: true
+  management_interface:
+    method: dhcp
+    interfaces:
+      - name: eth0

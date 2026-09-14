@@ -1,0 +1,30 @@
+scheme_version: 1
+token: "secret-token"
+os:
+  hostname: "hv-bonded-node"
+  password: "rancher-password"
+  dns_nameservers:
+    - 10.10.0.1
+    - 10.10.0.2
+  ntp_servers:
+    - 0.suse.pool.ntp.org
+install:
+  mode: create
+  device: "/dev/sda"
+  vip: "10.10.0.50"
+  vip_mode: "static"
+  management_interface:
+    method: static
+    ip: "10.10.0.51"
+    subnet_mask: "255.255.255.0"
+    gateway: "10.10.0.1"
+    vlan_id: 100
+    mtu: 9000
+    interfaces:
+      - name: eth0
+        hwAddr: "52:54:00:11:22:33"
+      - name: eth1
+        hwAddr: "52:54:00:44:55:66"
+    bond_options:
+      mode: "802.3ad"
+      miimon: "100"

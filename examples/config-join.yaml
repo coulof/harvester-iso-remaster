@@ -1,0 +1,25 @@
+scheme_version: 1
+server_url: "https://10.144.98.240:443"
+token: "cluster-token-sample"
+
+os:
+  hostname: "hv-join-node"
+  password: "rancher#sample$password"
+  ssh_authorized_keys:
+    - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleKey123 user@domain"
+  dns_nameservers:
+    - "10.144.103.254"
+    - "8.8.8.8"
+  ntp_servers:
+    - "0.suse.pool.ntp.org"
+
+install:
+  mode: join
+  device: "/dev/sda"
+  data_disk: "/dev/sdb"
+  iso_url: "https://releases.rancher.com/harvester/v1.8.2/harvester-v1.8.2-amd64.iso"
+
+  management_interface:
+    method: dhcp
+    interfaces:
+      - name: "eth0"

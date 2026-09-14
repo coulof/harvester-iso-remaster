@@ -1,0 +1,92 @@
+version: "3"
+
+# Taskfile for Harvester vmedia ISO Remastering
+# Builds automated, config-baked ISOs for CREATE and JOIN modes using native Linux tools.
+
+vars:
+  SOURCE_ISO: '{{.SOURCE_ISO | default "harvester-v1.8.2-amd64.iso"}}'
+  CONFIG_DIR: '{{.CONFIG_DIR | default "examples"}}'
+  CREATE_CONFIG: '{{.CREATE_CONFIG | default (printf "%s/config-create.yaml" .CONFIG_DIR)}}'
+  JOIN_CONFIG: '{{.JOIN_CONFIG | default (printf "%s/config-join.yaml" .CONFIG_DIR)}}'
+  CREATE_ISO: '{{.CREATE_ISO | default "harvester-v1.8.2-create.iso"}}'
+  JOIN_ISO: '{{.JOIN_ISO | default "harvester-v1.8.2-join.iso"}}'
+  GRUB_TIMEOUT: '{{.GRUB_TIMEOUT | default "3"}}'
+
+tasks:
+  build-cmdline:
+    desc: "Build harvester-cmdline Go binary"
+    cmds:
+      - mkdir -p bin
+      - go build -mod=vendor -o bin/harvester-cmdline ./cmd/harvester-cmdline
+
+  test-cmdline:
+    desc: "Run harvester-cmdline test suite"
+    cmds:
+      - go test -mod=vendor -v ./...
+
+  check-deps:
+    desc: "Verify native Linux tools (xorriso, mtools, dosfstools, python3) are installed"
+    cmds:
+      - |
+        MISSING=""
+        for tool in xorriso mcopy mkfs.vfat python3; do
+          if ! command -v "$tool" >/dev/null 2>&1; then
+            MISSING="$MISSING $tool"
+          fi
+        done
+        if [ -n "$MISSING" ]; then
+          echo "[!] Missing required native Linux tools:$MISSING"
+          echo "    Please install them using your system package manager:"
+          echo "      - openSUSE / SLES: sudo zypper in -y xorriso mtools dosfstools python3"
+          echo "      - Ubuntu / Debian: sudo apt-get install -y xorriso mtools dosfstools python3"
+          echo "      - RHEL / Rocky:    sudo dnf install -y xorriso mtools dosfstools python3"
+          exit 1
+        else
+          echo "[+] All required native tools (xorriso, mtools, dosfstools, python3) are available."
+        fi
+
+  remaster-create:
+    desc: "Build automated Harvester ISO for CREATE mode (Initial Node)"
+    deps: [check-deps]
+    cmds:
+      - |
+        if [ ! -f "{{.SOURCE_ISO}}" ]; then
+          echo "[-] Source ISO '{{.SOURCE_ISO}}' not found."
+          echo "    Download Harvester v1.8.2 ISO or specify SOURCE_ISO=/path/to/iso"
+          exit 1
+        fi
+        ./remaster-iso.sh \
+          --source-iso "{{.SOURCE_ISO}}" \
+          --config-file "{{.CREATE_CONFIG}}" \
+          --mode create \
+          --output-iso "{{.CREATE_ISO}}" \
+          --timeout "{{.GRUB_TIMEOUT}}"
+
+  remaster-join:
+    desc: "Build automated Harvester ISO for JOIN mode (Secondary Nodes)"
+    deps: [check-deps]
+    cmds:
+      - |
+        if [ ! -f "{{.SOURCE_ISO}}" ]; then
+          echo "[-] Source ISO '{{.SOURCE_ISO}}' not found."
+          echo "    Download Harvester v1.8.2 ISO or specify SOURCE_ISO=/path/to/iso"
+          exit 1
+        fi
+        ./remaster-iso.sh \
+          --source-iso "{{.SOURCE_ISO}}" \
+          --config-file "{{.JOIN_CONFIG}}" \
+          --mode join \
+          --output-iso "{{.JOIN_ISO}}" \
+          --timeout "{{.GRUB_TIMEOUT}}"
+
+  remaster-all:
+    desc: "Build both CREATE and JOIN automated ISOs"
+    cmds:
+      - task: remaster-create
+      - task: remaster-join
+
+  clean:
+    desc: "Remove generated ISO artifacts and checksums"
+    cmds:
+      - rm -f {{.CREATE_ISO}} {{.CREATE_ISO}}.sha512 {{.JOIN_ISO}} {{.JOIN_ISO}}.sha512
+      - echo "[+] Cleaned vmedia ISO artifacts."

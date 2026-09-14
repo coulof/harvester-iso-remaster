@@ -1,0 +1,14 @@
+scheme_version: 1
+token: "secret-token"
+os:
+  hostname: 'bad"hostname'
+  password: "rancher-password"
+install:
+  mode: create
+  device: "/dev/sda"
+  vip: "10.0.0.100"
+  vip_mode: "static"
+  management_interface:
+    method: dhcp
+    interfaces:
+      - name: eth0

@@ -1,0 +1,15 @@
+# Build artifacts
+bin/
+
+# Test artifacts
+*.test
+*.out
+
+# OS & editor metadata
+.DS_Store
+.AppleDouble
+.LSOverride
+*.swp
+*.swo
+.idea/
+.vscode/

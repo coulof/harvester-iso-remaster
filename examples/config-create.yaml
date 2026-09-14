@@ -1,0 +1,30 @@
+scheme_version: 1
+token: "cluster-token-sample"
+
+os:
+  hostname: "hv-create-node"
+  password: "rancher#sample$password"
+  ssh_authorized_keys:
+    - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleKey123 user@domain"
+  dns_nameservers:
+    - "10.144.103.254"
+    - "8.8.8.8"
+  ntp_servers:
+    - "0.suse.pool.ntp.org"
+
+install:
+  mode: create
+  device: "/dev/sda"
+  data_disk: "/dev/sdb"
+  vip: "10.144.98.240"
+  vip_mode: "static"
+  skipchecks: true
+  iso_url: "https://releases.rancher.com/harvester/v1.8.2/harvester-v1.8.2-amd64.iso"
+
+  management_interface:
+    method: static
+    ip: "10.144.98.241"
+    subnet_mask: "255.255.248.0"
+    gateway: "10.144.103.254"
+    interfaces:
+      - name: "eth0"

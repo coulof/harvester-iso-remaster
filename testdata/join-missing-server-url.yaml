@@ -1,0 +1,12 @@
+scheme_version: 1
+token: "secret-token"
+os:
+  hostname: "hv-join-node"
+  password: "rancher-password"
+install:
+  mode: join
+  device: "/dev/sda"
+  management_interface:
+    method: dhcp
+    interfaces:
+      - name: eth0

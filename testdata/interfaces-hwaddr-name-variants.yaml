@@ -1,0 +1,17 @@
+scheme_version: 1
+token: "secret-token"
+os:
+  hostname: "hv-iface-node"
+  password: "rancher-password"
+install:
+  mode: create
+  device: "/dev/sda"
+  vip: "10.0.0.100"
+  vip_mode: "static"
+  management_interface:
+    method: dhcp
+    interfaces:
+      - hwAddr: "52:54:00:aa:bb:cc"
+      - name: "eth1"
+      - hwAddr: "52:54:00:dd:ee:ff"
+        name: "eth2"
