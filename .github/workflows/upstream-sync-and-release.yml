@@ -149,7 +149,7 @@ jobs:
           TAG="${{ steps.detect.outputs.target_tag }}"
 
           gh release create "${TAG}" dist/* \
-            --title "Harvester ISO Remaster ${TAG}" \
+            --title "${TAG}" \
             --notes "Automated release matching upstream [harvester/harvester-installer ${TAG}](https://github.com/harvester/harvester-installer/releases/tag/${TAG}).
 
           ### Artifacts Included
