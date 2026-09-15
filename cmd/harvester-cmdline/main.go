@@ -14,8 +14,8 @@ import (
 	"github.com/coulof/harvester-iso-remaster/internal/validate"
 )
 
-// Version constants
-const (
+// Version variables (injectable at build time via -ldflags)
+var (
 	ToolVersion        = "v0.1.0"
 	PinnedInstallerTag = "v1.8.2"
 )

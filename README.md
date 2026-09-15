@@ -215,6 +215,20 @@ make lint
 
 ---
 
-## 8. License
+## 8. Automated Releases & Upstream Tracking
+
+A scheduled GitHub Actions workflow checks [harvester/harvester-installer](https://github.com/harvester/harvester-installer/releases) weekly (every Sunday at 00:00 UTC) for new stable releases (excluding pre-releases and `-rc*` candidates).
+
+When a new GA version (e.g., `v1.8.3` or `v1.9.0`) is published upstream:
+1. `go.mod` and offline `vendor/` are bumped to the upstream tag.
+2. The verification test suite and round-trip oracle are executed.
+3. Multi-architecture binaries (`linux-amd64`, `linux-arm64`, `darwin-amd64`, `darwin-arm64`) and release tarballs are compiled and tagged.
+4. A matching GitHub release is published with SHA-256 checksums.
+
+Manual builds for specific upstream tags can also be triggered via `workflow_dispatch`.
+
+---
+
+## 9. License
 
 This project is licensed under the MIT License. See [LICENSE](LICENSE) for terms. See [NOTICE](NOTICE) for third-party component acknowledgments (including Apache-2.0 upstream Harvester dependencies).

@@ -1,0 +1,158 @@
+name: Upstream Sync & Automated Release
+
+on:
+  schedule:
+    # Runs weekly every Sunday at 00:00 UTC
+    - cron: '0 0 * * 0'
+  workflow_dispatch:
+    inputs:
+      target_version:
+        description: 'Specific Harvester installer version to build and release (e.g. v1.8.2). Leave blank to auto-detect latest stable release.'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  check-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+          check-latest: true
+
+      - name: Detect upstream release
+        id: detect
+        run: |
+          set -euo pipefail
+
+          TARGET="${{ github.event.inputs.target_version }}"
+          if [ -z "$TARGET" ]; then
+            echo "[+] Fetching releases from harvester/harvester-installer..."
+            # Find latest non-prerelease, non-draft tag matching vX.Y.Z
+            LATEST_TAG=$(curl -sSL "https://api.github.com/repos/harvester/harvester-installer/releases" | \
+              jq -r '.[] | select(.prerelease == false and .draft == false) | .tag_name' | \
+              grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | \
+              head -n 1)
+
+            if [ -z "$LATEST_TAG" ]; then
+              echo "[-] Error: Could not determine latest stable upstream release."
+              exit 1
+            fi
+            TARGET="$LATEST_TAG"
+          fi
+
+          echo "[+] Selected target release: $TARGET"
+          echo "target_tag=$TARGET" >> "$GITHUB_OUTPUT"
+
+          # Check if tag already exists in local or remote repository
+          if git rev-parse "refs/tags/$TARGET" >/dev/null 2>&1; then
+            echo "[*] Release tag $TARGET already exists in repository. Up to date."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "[*] New release tag detected: $TARGET"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upgrade dependencies and run tests
+        if: steps.detect.outputs.skip == 'false'
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.detect.outputs.target_tag }}"
+          echo "[+] Upgrading github.com/harvester/harvester-installer to ${TAG}..."
+          go get "github.com/harvester/harvester-installer@${TAG}"
+          go mod tidy
+          go mod vendor
+
+          echo "[+] Running unit tests and verification oracle..."
+          go test -mod=vendor -v ./...
+
+      - name: Build multi-arch binaries and release assets
+        if: steps.detect.outputs.skip == 'false'
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.detect.outputs.target_tag }}"
+          DIST_DIR="dist"
+          mkdir -p "${DIST_DIR}"
+
+          LDFLAGS="-s -w -X main.ToolVersion=${TAG} -X main.PinnedInstallerTag=${TAG}"
+
+          PLATFORMS=(
+            "linux/amd64"
+            "linux/arm64"
+            "darwin/amd64"
+            "darwin/arm64"
+          )
+
+          for PLATFORM in "${PLATFORMS[@]}"; do
+            GOOS="${PLATFORM%/*}"
+            GOARCH="${PLATFORM#*/}"
+            OUTPUT_NAME="harvester-cmdline-${TAG}-${GOOS}-${GOARCH}"
+            echo "[+] Compiling for ${GOOS}/${GOARCH} -> ${OUTPUT_NAME}..."
+            CGO_ENABLED=0 GOOS="${GOOS}" GOARCH="${GOARCH}" go build -mod=vendor \
+              -ldflags "${LDFLAGS}" \
+              -o "${DIST_DIR}/${OUTPUT_NAME}" \
+              ./cmd/harvester-cmdline
+          done
+
+          # Package a portable release tarball (with linux-amd64 binary for PowerEdge servers)
+          PKG_DIR="harvester-iso-remaster-${TAG}"
+          mkdir -p "${PKG_DIR}/bin"
+          cp "${DIST_DIR}/harvester-cmdline-${TAG}-linux-amd64" "${PKG_DIR}/bin/harvester-cmdline"
+          chmod +x "${PKG_DIR}/bin/harvester-cmdline"
+          cp remaster-iso.sh Taskfile.yml Makefile LICENSE NOTICE README.md "${PKG_DIR}/"
+          cp -r examples "${PKG_DIR}/"
+
+          tar -czf "${DIST_DIR}/harvester-iso-remaster-${TAG}.tar.gz" "${PKG_DIR}"
+          rm -rf "${PKG_DIR}"
+
+          # Compute SHA256 checksums
+          cd "${DIST_DIR}"
+          sha256sum * > checksums.txt
+          cd ..
+          echo "[+] Build completed. Artifacts in ${DIST_DIR}:"
+          ls -lh "${DIST_DIR}"
+
+      - name: Commit dependency update and push tag
+        if: steps.detect.outputs.skip == 'false'
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.detect.outputs.target_tag }}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add go.mod go.sum vendor/
+          if ! git diff --cached --quiet; then
+            git commit -m "chore(release): bump harvester-installer to ${TAG}"
+            git push origin HEAD:main
+          fi
+
+          git tag -a "${TAG}" -m "Release ${TAG} matching Harvester ${TAG}"
+          git push origin "${TAG}"
+
+      - name: Create GitHub Release
+        if: steps.detect.outputs.skip == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.detect.outputs.target_tag }}"
+
+          gh release create "${TAG}" dist/* \
+            --title "Harvester ISO Remaster ${TAG}" \
+            --notes "Automated release matching upstream [harvester/harvester-installer ${TAG}](https://github.com/harvester/harvester-installer/releases/tag/${TAG}).
+
+          ### Artifacts Included
+          - Multi-architecture standalone binaries (\`linux-amd64\`, \`linux-arm64\`, \`darwin-amd64\`, \`darwin-arm64\`)
+          - Full toolchain package (\`harvester-iso-remaster-${TAG}.tar.gz\`)
+          - \`checksums.txt\` (SHA256 checksums)"
