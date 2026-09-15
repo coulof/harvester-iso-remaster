@@ -124,12 +124,15 @@ task clean
 | Option | Required | Default | Description |
 |---|---|---|---|
 | `--source-iso` | Yes | - | Path to upstream Harvester v1.8 ISO |
-| `--config-file` | Yes | - | Path to Harvester configuration YAML |
-| `--mode` | Yes | `create` | Deployment mode: `create` or `join` |
-| `--output-iso` | Yes | - | Destination path for remastered ISO |
+| `--config-file` | At least one* | - | Path to Harvester configuration YAML |
+| `--ipxe-file` | At least one* | - | Path to iPXE script to extract kernel boot arguments |
+| `--mode` | No | `create` | Deployment mode: `create` or `join` |
+| `--output-iso` | No | `./harvester-v1.8.2-<mode>.iso` | Destination path for remastered ISO |
 | `--timeout` | No | `3` | GRUB boot menu countdown in seconds |
 | `--volume-id` | No | `COS_LIVE` | ISO volume label (must remain `COS_LIVE` for Harvester dracut) |
 | `--extra-cmdline` | No | - | Additional kernel arguments to append |
+
+*\* At least one configuration source (`--config-file` or `--ipxe-file`) must be provided.*
 
 ### B. Parameter Engine (`harvester-cmdline`)
 ```text

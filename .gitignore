@@ -1,6 +1,11 @@
 # Build artifacts
 bin/
 
+# ISO & checksum artifacts
+*.iso
+*.iso.sha512
+*.sha512
+
 # Test artifacts
 *.test
 *.out
@@ -13,3 +18,4 @@ bin/
 *.swo
 .idea/
 .vscode/
+.direnv/
