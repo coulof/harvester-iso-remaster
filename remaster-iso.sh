@@ -238,13 +238,16 @@ fi
 
 if [[ -n "$IPXE_FILE" ]]; then
     echo "    Extracting arguments from iPXE script ($IPXE_FILE)..."
-    # Read the 'kernel' line, skip 'kernel <kernel-path>', skip 'root=live:http...',
-    # skip 'initrd=...' (handled separately by GRUB on ISO).
+    # Read the 'kernel' line, skip 'kernel <kernel-path>', skip 'root=live:...',
+    # skip 'initrd=...' (handled separately by GRUB on ISO), expand ${fileserver} if defined.
     CMDLINE_PARAMS=$(awk '
+      /^set fileserver / { fs = $3 }
       /^kernel[[:space:]]/ {
         for (i=3; i<=NF; i++) {
-          if ($i ~ /^root=live:http/ || $i ~ /^initrd=/) continue;
-          printf "%s%s", (out ? " " : ""), $i;
+          val = $i;
+          if (fs) gsub(/\$\{fileserver\}/, fs, val);
+          if (val ~ /^root=live:/ || val ~ /^initrd=/) continue;
+          printf "%s%s", (out ? " " : ""), val;
           out=1;
         }
         print "";
