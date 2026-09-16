@@ -81,7 +81,7 @@ Examples:
     --mode create \\
     --output-iso ./harvester-v1.8.2-create.iso
 EOF
-    exit 1
+    exit "${1:-1}"
 }
 
 # Parse Arguments
@@ -147,7 +147,7 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         -h|--help)
-            usage
+            usage 0
             ;;
         *)
             echo "[-] Error: Unknown argument: $1" >&2
