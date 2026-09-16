@@ -1,0 +1,8 @@
+.git
+.github
+bin/
+dist/
+*.iso
+*.iso.sha512
+*.log
+*.tmp

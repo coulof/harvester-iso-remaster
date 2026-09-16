@@ -11,6 +11,8 @@ vars:
   CREATE_ISO: '{{.CREATE_ISO | default "harvester-v1.8.2-create.iso"}}'
   JOIN_ISO: '{{.JOIN_ISO | default "harvester-v1.8.2-join.iso"}}'
   GRUB_TIMEOUT: '{{.GRUB_TIMEOUT | default "3"}}'
+  CONTAINER_CLI: '{{.CONTAINER_CLI | default "container"}}'
+  CONTAINER_IMAGE: '{{.CONTAINER_IMAGE | default "harvester-iso-remaster:local"}}'
 
 tasks:
   build-cmdline:
@@ -84,6 +86,65 @@ tasks:
     cmds:
       - task: remaster-create
       - task: remaster-join
+
+  container-build:
+    desc: "Build container image locally using macOS container CLI"
+    cmds:
+      - "{{.CONTAINER_CLI}} build -t {{.CONTAINER_IMAGE}} ."
+
+  container-test:
+    desc: "Smoke test container image locally (CLI help and harvester-cmdline version)"
+    deps: [container-build]
+    cmds:
+      - echo "[+] Testing container entrypoint (--help)..."
+      - "{{.CONTAINER_CLI}} run --rm {{.CONTAINER_IMAGE}} --help"
+      - echo "[+] Testing container harvester-cmdline binary (--version)..."
+      - "{{.CONTAINER_CLI}} run --rm --entrypoint harvester-cmdline {{.CONTAINER_IMAGE}} --version"
+      - echo "[✓] Container smoke tests passed."
+
+  container-remaster-create:
+    desc: "Build automated Harvester ISO for CREATE mode inside container"
+    cmds:
+      - |
+        if [ ! -f "{{.SOURCE_ISO}}" ]; then
+          echo "[-] Source ISO '{{.SOURCE_ISO}}' not found."
+          echo "    Download Harvester ISO or specify SOURCE_ISO=/path/to/iso"
+          exit 1
+        fi
+        {{.CONTAINER_CLI}} run --rm \
+          -v "$PWD:/workspace" \
+          -w /workspace \
+          {{.CONTAINER_IMAGE}} \
+          --source-iso "{{.SOURCE_ISO}}" \
+          --config-file "{{.CREATE_CONFIG}}" \
+          --mode create \
+          --output-iso "{{.CREATE_ISO}}" \
+          --timeout "{{.GRUB_TIMEOUT}}"
+
+  container-remaster-join:
+    desc: "Build automated Harvester ISO for JOIN mode inside container"
+    cmds:
+      - |
+        if [ ! -f "{{.SOURCE_ISO}}" ]; then
+          echo "[-] Source ISO '{{.SOURCE_ISO}}' not found."
+          echo "    Download Harvester ISO or specify SOURCE_ISO=/path/to/iso"
+          exit 1
+        fi
+        {{.CONTAINER_CLI}} run --rm \
+          -v "$PWD:/workspace" \
+          -w /workspace \
+          {{.CONTAINER_IMAGE}} \
+          --source-iso "{{.SOURCE_ISO}}" \
+          --config-file "{{.JOIN_CONFIG}}" \
+          --mode join \
+          --output-iso "{{.JOIN_ISO}}" \
+          --timeout "{{.GRUB_TIMEOUT}}"
+
+  container-remaster-all:
+    desc: "Build both CREATE and JOIN automated ISOs inside container"
+    cmds:
+      - task: container-remaster-create
+      - task: container-remaster-join
 
   clean:
     desc: "Remove generated ISO artifacts and checksums"

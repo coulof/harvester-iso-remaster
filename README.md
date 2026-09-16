@@ -57,17 +57,79 @@ When enabled, a warning is printed to `stderr` on every execution. In audit-sens
 
 ---
 
-## 3. Required Packages & Installation
+## 3. Toolchain Installation & Execution Options
 
-The toolchain runs natively on Linux without containers or wrapper layers.
+The toolchain can be executed in two ways:
+1. **Containerized (Zero-Install)**: Pre-packaged with all dependencies (`mcopy`, `mkfs.vfat`, `xorriso`, `harvester-cmdline`) available on GitHub Container Registry (`ghcr.io`). Works with macOS native `container` CLI, `docker`, or `podman`.
+2. **Native Linux / macOS**: Runs directly on the host using installed system packages.
 
-### Required Tools
+### Option A: Containerized Execution (Recommended for zero host dependencies)
+
+Pre-built multi-architecture (`linux/amd64` and `linux/arm64`) images are published to GitHub Container Registry:
+```text
+ghcr.io/coulof/harvester-iso-remaster:latest
+ghcr.io/coulof/harvester-iso-remaster:v1.8.2
+```
+
+#### 1. Zero-Install One-Liner (Docker / Podman / macOS `container`)
+```bash
+# Using Docker
+docker run --rm -v "$PWD":/workspace -w /workspace \
+  ghcr.io/coulof/harvester-iso-remaster:latest \
+  --source-iso ./harvester-v1.8.2-amd64.iso \
+  --config-file ./examples/config-create.yaml \
+  --mode create \
+  --output-iso ./harvester-v1.8.2-create.iso
+
+# Using macOS native container CLI
+container run --rm -v "$PWD":/workspace -w /workspace \
+  ghcr.io/coulof/harvester-iso-remaster:latest \
+  --source-iso ./harvester-v1.8.2-amd64.iso \
+  --config-file ./examples/config-create.yaml \
+  --mode create \
+  --output-iso ./harvester-v1.8.2-create.iso
+```
+
+#### 2. Transparent Script Delegation (`--container`)
+```bash
+# Automatically detects 'container', 'docker', or 'podman'
+./remaster-iso.sh --container \
+  --source-iso ./harvester-v1.8.2-amd64.iso \
+  --config-file ./examples/config-create.yaml \
+  --mode create \
+  --output-iso ./harvester-v1.8.2-create.iso
+```
+
+#### 3. Local Build & Test with macOS `container` CLI
+```bash
+# Build local container image
+task container-build
+# or: container build -t harvester-iso-remaster:local .
+
+# Smoke test CLI help and parameter emitter inside container
+task container-test
+
+# Remaster ISO using the container
+task container-remaster-create SOURCE_ISO=/path/to/harvester-v1.8.2-amd64.iso
+```
+
+---
+
+### Option B: Native Host Installation
+
+If you prefer to run natively on the host:
+
+#### Required Tools
 - `xorriso` — ISO9660 / Rock Ridge / Joliet / El Torito manipulation
 - `mcopy` (from `mtools`) — Copies EFI files into FAT32 boot images
 - `mkfs.vfat` (from `dosfstools`) — Formats the 4MB UEFI system partition image
 - `go` (>= 1.26) — To compile `harvester-cmdline` (vendored offline)
 
-### Package Installation by Distribution
+#### Package Installation by Distribution
+- **macOS (Homebrew):**
+  ```bash
+  brew install xorriso mtools dosfstools go
+  ```
 - **openSUSE Leap / SLES / SLE Micro:**
   ```bash
   sudo zypper in -y xorriso mtools dosfstools go
@@ -79,10 +141,6 @@ The toolchain runs natively on Linux without containers or wrapper layers.
 - **RHEL / Rocky Linux / AlmaLinux:**
   ```bash
   sudo dnf install -y xorriso mtools dosfstools golang
-  ```
-- **macOS (Homebrew):**
-  ```bash
-  brew install xorriso mtools dosfstools go
   ```
 
 ---
@@ -131,6 +189,9 @@ task clean
 | `--timeout` | No | `3` | GRUB boot menu countdown in seconds |
 | `--volume-id` | No | `COS_LIVE` | ISO volume label (must remain `COS_LIVE` for Harvester dracut) |
 | `--extra-cmdline` | No | - | Additional kernel arguments to append |
+| `--container` | No | - | Run remastering inside container (zero host dependencies) |
+| `--container-image` | No | `ghcr.io/coulof/harvester-iso-remaster:latest` | Container image name/tag |
+| `--container-engine` | No | auto | Container CLI override (`container`, `docker`, or `podman`) |
 
 *\* At least one configuration source (`--config-file` or `--ipxe-file`) must be provided.*
 
@@ -226,7 +287,8 @@ When a new GA version (e.g., `v1.8.3` or `v1.9.0`) is published upstream:
 1. `go.mod` and offline `vendor/` are bumped to the upstream tag.
 2. The verification test suite and round-trip oracle are executed.
 3. Multi-architecture binaries (`linux-amd64`, `linux-arm64`, `darwin-amd64`, `darwin-arm64`) and release tarballs are compiled and tagged.
-4. A matching GitHub release is published with SHA-256 checksums.
+4. Multi-architecture container images (`linux/amd64`, `linux/arm64`) are built and pushed to GitHub Container Registry (`ghcr.io/coulof/harvester-iso-remaster:<version>` and `:latest`).
+5. A matching GitHub release is published with SHA-256 checksums.
 
 Manual builds for specific upstream tags can also be triggered via `workflow_dispatch`.
 

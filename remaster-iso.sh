@@ -25,6 +25,10 @@ HARVESTER_VERSION=""
 GRUB_TIMEOUT=3
 VOLUME_LABEL="COS_LIVE"
 EXTRA_CMDLINE=""
+USE_CONTAINER="${CONTAINER:-false}"
+CONTAINER_IMAGE="${CONTAINER_IMAGE:-ghcr.io/coulof/harvester-iso-remaster:latest}"
+CONTAINER_ENGINE="${CONTAINER_ENGINE:-}"
+PASSTHROUGH_ARGS=()
 
 usage() {
     cat <<EOF
@@ -44,23 +48,33 @@ Optional:
   --timeout <seconds>    GRUB menu timeout in seconds (default: 3)
   --volume-id <label>    ISO Volume Label (default: COS_LIVE)
   --extra-cmdline <args> Additional kernel parameters to append
+  --container            Run remastering inside container (no local tools required)
+  --container-image <img> Container image to run (default: ghcr.io/coulof/harvester-iso-remaster:latest)
+  --container-engine <cli> Container CLI override (auto-detects: container, docker, podman)
   -h, --help             Show this help message and exit
 
-Dependencies:
+Dependencies (when running natively):
   - xorriso
   - mcopy (from mtools package)
   - mkfs.vfat or mkfs.fat (from dosfstools package)
   - harvester-cmdline (compiled Go binary or in PATH)
 
 Examples:
-  # Using iPXE script + Config YAML:
+  # Using container (zero host dependencies):
+  $(basename "$0") --container \\
+    --source-iso ./harvester-v1.8.2-amd64.iso \\
+    --config-file ./examples/config-create.yaml \\
+    --mode create \\
+    --output-iso ./harvester-v1.8.2-create.iso
+
+  # Using iPXE script + Config YAML natively:
   $(basename "$0") \\
     --source-iso ./harvester-v1.8.2-amd64.iso \\
     --ipxe-file ./csc/ipxe \\
     --config-file ./csc/config-create-01.yaml \\
     --output-iso ./harvester-v1.8.2-create.iso
 
-  # Using Config YAML directly (baked-in parameters):
+  # Using Config YAML directly (baked-in parameters) natively:
   $(basename "$0") \\
     --source-iso ./harvester-v1.8.2-amd64.iso \\
     --config-file ./examples/config-create.yaml \\
@@ -73,40 +87,63 @@ EOF
 # Parse Arguments
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --container|--docker)
+            USE_CONTAINER="true"
+            shift
+            ;;
+        --container-image)
+            USE_CONTAINER="true"
+            CONTAINER_IMAGE="$2"
+            shift 2
+            ;;
+        --container-engine)
+            USE_CONTAINER="true"
+            CONTAINER_ENGINE="$2"
+            shift 2
+            ;;
         --source-iso)
             SOURCE_ISO="$2"
+            PASSTHROUGH_ARGS+=("$1" "$2")
             shift 2
             ;;
         --config-file)
             CONFIG_FILE="$2"
+            PASSTHROUGH_ARGS+=("$1" "$2")
             shift 2
             ;;
         --ipxe-file)
             IPXE_FILE="$2"
+            PASSTHROUGH_ARGS+=("$1" "$2")
             shift 2
             ;;
         --mode)
             MODE="$2"
+            PASSTHROUGH_ARGS+=("$1" "$2")
             shift 2
             ;;
         --harvester-version)
             HARVESTER_VERSION="$2"
+            PASSTHROUGH_ARGS+=("$1" "$2")
             shift 2
             ;;
         --output-iso)
             OUTPUT_ISO="$2"
+            PASSTHROUGH_ARGS+=("$1" "$2")
             shift 2
             ;;
         --timeout)
             GRUB_TIMEOUT="$2"
+            PASSTHROUGH_ARGS+=("$1" "$2")
             shift 2
             ;;
         --volume-id)
             VOLUME_LABEL="$2"
+            PASSTHROUGH_ARGS+=("$1" "$2")
             shift 2
             ;;
         --extra-cmdline)
             EXTRA_CMDLINE="$2"
+            PASSTHROUGH_ARGS+=("$1" "$2")
             shift 2
             ;;
         -h|--help)
@@ -118,6 +155,34 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# If running via container, delegate to container engine
+if [[ "$USE_CONTAINER" == "true" && ! -f /.dockerenv && ! -f /run/.containerenv ]]; then
+    if [[ -z "$CONTAINER_ENGINE" ]]; then
+        if command -v container >/dev/null 2>&1; then
+            CONTAINER_ENGINE="container"
+        elif command -v docker >/dev/null 2>&1; then
+            CONTAINER_ENGINE="docker"
+        elif command -v podman >/dev/null 2>&1; then
+            CONTAINER_ENGINE="podman"
+        else
+            echo "[-] Error: No container CLI ('container', 'docker', or 'podman') found in PATH." >&2
+            exit 1
+        fi
+    fi
+
+    echo "[+] Delegating ISO remastering to ${CONTAINER_ENGINE} (${CONTAINER_IMAGE})..."
+    INTERACTIVE_OPTS=()
+    if [[ -t 0 && -t 1 ]]; then
+        INTERACTIVE_OPTS=("-it")
+    fi
+
+    exec "$CONTAINER_ENGINE" run --rm "${INTERACTIVE_OPTS[@]}" \
+        --user "$(id -u):$(id -g)" \
+        -v "${PWD}:/workspace" \
+        -w /workspace \
+        "$CONTAINER_IMAGE" "${PASSTHROUGH_ARGS[@]}"
+fi
 
 # Validate Required Inputs
 if [[ -z "$SOURCE_ISO" ]]; then
@@ -193,6 +258,10 @@ if [[ ${#MISSING_TOOLS[@]} -gt 0 ]]; then
     echo "      - openSUSE / SLES: sudo zypper in -y xorriso mtools dosfstools go" >&2
     echo "      - Ubuntu / Debian: sudo apt-get install -y xorriso mtools dosfstools golang-go" >&2
     echo "      - RHEL / Rocky:    sudo dnf install -y xorriso mtools dosfstools golang" >&2
+    echo "" >&2
+    echo "    Alternatively, run via container (zero host dependencies):" >&2
+    echo "      $(basename "$0") --container [options]" >&2
+    echo "      or: docker run --rm -v \"\$PWD\":/workspace -w /workspace ghcr.io/coulof/harvester-iso-remaster:latest [options]" >&2
     exit 1
 fi
 
